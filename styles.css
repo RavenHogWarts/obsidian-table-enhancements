@@ -1,8 +1,16 @@
-/*
+/* styles.css */
+.dropdown-wrapper {
+  display: flex;
+  margin-bottom: 10px; 
+}
+.dropdown-wrapper .dropdown {
+  margin: 0 10px;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.yaml-field-wrapper {
+  margin: 0 10px;
+}
 
-If your plugin does not need CSS, delete this file.
-
-*/
+.button-wrapper {
+  text-align: right; /* Align the button to the right side */
+}

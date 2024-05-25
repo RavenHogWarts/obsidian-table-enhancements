@@ -1,134 +1,137 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, Plugin, Modal, DropdownComponent, TextComponent, ButtonComponent } from 'obsidian';
 
-// Remember to rename these classes and interfaces!
-
-interface MyPluginSettings {
-	mySetting: string;
-}
-
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
-
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
-
-	async onload() {
-		await this.loadSettings();
-
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
-		// This adds a simple command that can be triggered anywhere
+export default class TableStatsPlugin extends Plugin {
+	onload() {
 		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
+			id: 'calculate-custom-table-stats',
+			name: 'Calculate Custom Table Stats',
+			callback: () => this.calculateStats(),
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
-	onunload() {
-
-	}
-
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
+	async calculateStats() {
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) {
+			new Notice('No active file.');
+			return;
+		}
+		const fileContent = await this.app.vault.read(activeFile);
+		const tables = fileContent.match(/(\|.*\|[\r\n|\r|\n]){2,}/gm);
+		if (!tables || tables.length === 0) {
+			new Notice('No markdown tables found.');
+			return;
+		}
+		
+		const firstTable = tables[0];
+		const rows = firstTable.split('\n').filter(line => line.trim().startsWith('|') && !line.trim().startsWith('| ---'));
+		if (rows.length <= 1) {
+			new Notice('Table has no data rows.');
+			return;
+		}
+		
+		const columnCount = rows[0].split('|').length - 2;
+		new ColumnSelectModal(this.app, columnCount, rows).open();
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
+class ColumnSelectModal extends Modal {
+	constructor(app: App, private columnCount: number, private rows: string[]) {
 		super(app);
 	}
 
 	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
+		const { contentEl } = this;
+		contentEl.createEl('h2', {text: 'Calculate Stats for Table Column'});
+
+		// Create a div element to wrap dropdown components for styling
+		const dropdownWrapper = contentEl.createDiv();
+		dropdownWrapper.addClass('dropdown-wrapper');
+
+		const dropdown = new DropdownComponent(dropdownWrapper);
+		for (let i = 0; i < this.columnCount; i++) {
+			dropdown.addOption(i.toString(), `Column ${i + 1}`);
+		}
+
+		const methodDropdown = new DropdownComponent(dropdownWrapper);
+		methodDropdown.addOption('sum', 'Sum');
+		methodDropdown.addOption('count', 'Count');
+		methodDropdown.addOption('average', 'Average');
+
+		// Create a div element for the YAML field input for styling
+		const yamlFieldWrapper = contentEl.createDiv();
+		yamlFieldWrapper.addClass('yaml-field-wrapper');
+
+		const yamlFieldInput = new TextComponent(yamlFieldWrapper);
+		yamlFieldInput.setPlaceholder("YAML Field (e.g., stats)");
+
+		// Create a div element for the button for styling
+		const buttonWrapper = contentEl.createDiv();
+		buttonWrapper.addClass('button-wrapper');
+
+		const calculateButton = new ButtonComponent(buttonWrapper);
+		calculateButton.setButtonText('Calculate').onClick(() => {
+			const columnIndex = parseInt(dropdown.getValue());
+			const methodName = methodDropdown.getValue();
+			const yamlField = yamlFieldInput.getValue();
+			const stats = this.calculateColumnStats(columnIndex, methodName);
+			this.updateYamlField(yamlField, methodName, stats.result);
+			this.close();
+		});
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	calculateColumnStats(columnIndex: number, methodName: string): { result: number; count: number } {
+		let sum = 0;
+		let count = 0;
+		this.rows.forEach((row, idx) => {
+			if (idx === 0) return;
+			const cells = row.split('|').slice(1, -1);
+			const cellValue = parseFloat(cells[columnIndex]);
+			if (!isNaN(cellValue)) {
+				sum += cellValue;
+				count += 1;
+			}
+		});
+
+		let result = 0;
+		switch (methodName) {
+			case 'sum':
+				result = sum;
+				break;
+			case 'count':
+				result = count;
+				break;
+			case 'average':
+				result = count > 0 ? sum / count : 0;
+				break;
+		}
+
+		return { result, count };
 	}
-}
 
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+	async updateYamlField(field: string, method: string, value: number) {
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) return;
+		
+		let fileContent = await this.app.vault.read(activeFile);
+		const yamlPattern = /---\n([\s\S]+?)\n---/g;
+		let yamlMatch = yamlPattern.exec(fileContent);
+		
+		let newYamlContent;
+		if (yamlMatch) {
+			let yamlContent = yamlMatch[1];
+			const fieldPattern = new RegExp(`(${field}:).*`, 'm');
+			if (fieldPattern.test(yamlContent)) {
+				yamlContent = yamlContent.replace(fieldPattern, `$1 ${value}`);
+			} else {
+				yamlContent += `\n${field}: ${value}`;
+			}
+			newYamlContent = `---\n${yamlContent}\n---`;
+		} else {
+			newYamlContent = `---\n${field}: ${value}\n---\n`;
+		}
 
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		const {containerEl} = this;
-
-		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+		fileContent = fileContent.replace(yamlMatch ? yamlMatch[0] : '', newYamlContent);
+		await this.app.vault.modify(activeFile, fileContent);
+		new Notice(`Updated YAML field ${field} with value: ${value}`);
 	}
 }
