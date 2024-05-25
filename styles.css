@@ -2,13 +2,19 @@
 .dropdown-wrapper {
   display: flex;
   margin-bottom: 10px; 
+  max-width: 100%;
+  width: 200px;
 }
 .dropdown-wrapper .dropdown {
   margin: 0 10px;
+  max-width: 100%;
+  width: 200px;
 }
 
 .yaml-field-wrapper {
   margin: 0 10px;
+  max-width: 100%;
+  width: 200px;
 }
 
 .button-wrapper {
