@@ -7,9 +7,9 @@ export default class TableStatsPlugin extends Plugin {
             name: 'Calculate Custom Table Stats',
             callback: () => this.calculateStats(),
         });
-				this.addRibbonIcon('activity', 'Calculate Table Stats', () => {
-					this.calculateStats();
-				});
+        this.addRibbonIcon('activity', 'Calculate Table Stats', () => {
+            this.calculateStats();
+        });
     }
 
     async calculateStats() {
